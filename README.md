@@ -1,0 +1,2 @@
+# MNIST
+AlexNet、Regression
