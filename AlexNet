@@ -1,0 +1,103 @@
+from tensorflow.examples.tutorials.mnist import input_data
+mnist = input_data.read_data_sets("/tmp/data/", one_hot=True)
+
+import tensorflow as tf
+
+learning_rate = 0.01
+batch_size = 100
+epochs = 50
+dropout = 0.8
+
+x = tf.placeholder(tf.float32, [None, 784])
+y = tf.placeholder(tf.float32, [None, 10])
+keep_prob = tf.placeholder(tf.float32)
+
+def conv2d(_name, _input, _w, _b):
+    return tf.nn.relu(tf.nn.bias_add(tf.nn.conv2d(_input, _w, strides=[1,1,1,1], padding="SAME"), _b), name=_name)
+
+def max_pool(_name, _input, k):
+    return tf.nn.max_pool(_input, ksize=[1,k,k,1], strides=[1,k,k,1], padding="SAME", name=_name)
+
+def norm(_name, _input, lsize=4):
+    return tf.nn.lrn(_input, lsize, bias=1.0, alpha=0.001 / 9.0, beta=0.75, name=_name)
+
+def alexnet(_x, _weights, _bias, _dropout):
+    _x = tf.reshape(_x, [-1,28,28,1])
+    #卷积1
+    conv1 = conv2d("conv1", _x, _weights['wc1'], _bias['bc1'])
+    #下采样
+    pool1 = max_pool("pool1", conv1, k=2)
+    #归一化
+    norm1 = norm("norm1", pool1, lsize=4)
+    #Dropout
+    norm1 = tf.nn.dropout(norm1, _dropout)
+
+    #卷积2
+    conv2 = conv2d("conv2", norm1, _weights['wc2'], _bias['bc2'])
+    #下采样
+    pool2 = max_pool("pool2", conv2, k=2)
+    #归一化
+    norm2 = norm("norm2", pool2, lsize=4)
+    norm2 = tf.nn.dropout(norm2, _dropout)
+
+    #卷积3
+    conv3 = conv2d("conv3", norm2, _weights['wc3'], _bias['bc3'])
+    #下采样
+    pool3 = max_pool("pool3", conv3, k=2)
+    #归一化
+    norm3 = norm("norm3", pool3, lsize = 4)
+    norm3 = tf.nn.dropout(norm3, _dropout)
+
+    #全连接1
+    dense1 = tf.reshape(norm3, [-1, _weights['wd1'].get_shape().as_list()[0]])
+    dense1 = tf.nn.relu(tf.matmul(dense1, _weights['wd1']) + bias['bd1'], name="fc1")
+
+    #全连接2
+    desen2 = tf.nn.relu(tf.matmul(dense1, _weights['wd2']) + bias['bd2'], name="fc2")
+
+    #输出
+    out = tf.nn.bias_add(tf.matmul(desen2, _weights['out']), bias['out'], name="out")
+    return out
+
+weights = {
+    'wc1' : tf.Variable(tf.random_normal([3,3,1,64])),
+    'wc2' : tf.Variable(tf.random_normal([3,3,64,128])),
+    'wc3' : tf.Variable(tf.random_normal([3,3,128,256])),
+    'wd1' : tf.Variable(tf.random_normal([4*4*256,1024])),
+    'wd2' : tf.Variable(tf.random_normal([1024,1024])),
+    'out' : tf.Variable(tf.random_normal([1024,10]))
+}
+
+bias = {
+    'bc1' : tf.Variable(tf.random_normal([64])),
+    'bc2' : tf.Variable(tf.random_normal([128])),
+    'bc3' : tf.Variable(tf.random_normal([256])),
+    'bd1' : tf.Variable(tf.random_normal([1024])),
+    'bd2' : tf.Variable(tf.random_normal([1024])),
+    'out' : tf.Variable(tf.random_normal([10]))
+}
+
+pred = alexnet(x, weights, bias, keep_prob)  #输出
+cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=pred))  #交叉熵损失
+
+optimizer = tf.train.AdadeltaOptimizer(learning_rate).minimize(cost)
+
+#correct_pred = tf.cast(tf.equal(pred, y), tf.float32)  #准确率
+correct_pred = tf.equal(tf.argmax(pred,1), tf.argmax(y,1))
+#accuracy = tf.reduce_sum(tf.correct_pred)
+accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+
+init = tf.initialize_all_variables()
+
+with tf.Session() as sess:
+    sess.run(init)
+    total_batch = int(mnist.train.num_examples / batch_size)
+    for each in range(epochs):
+        total_cost = 0
+        for i in range(total_batch):
+            train_x, train_y = mnist.train.next_batch(batch_size)
+            sess.run(optimizer, feed_dict={x:train_x, y:train_y, keep_prob:dropout})
+            ave_cost = sess.run(cost, feed_dict={x: train_x, y: train_y, keep_prob: 1.})
+            total_cost += ave_cost/total_batch
+        print("Epoch:%d Cost:%f" %(each, total_cost))
+    print("Accuracy：", sess.run(accuracy, feed_dict={x:mnist.test.images[:256], y:mnist.test.labels[:256], keep_prob: 1.}))
